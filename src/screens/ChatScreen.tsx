@@ -10,16 +10,15 @@ import {
     KeyboardAvoidingView,
     Platform,
     Keyboard,
-    Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { createAudioPlayer } from 'expo-audio';
 import type { AudioPlayer } from 'expo-audio/build/AudioModule.types';
 import { colors } from '../utils/colors';
 import { Message, ReceiptEnum } from '../types';
 import { loadMessages, saveMessages } from '../storage/chatStore';
-import { sendToDummyApi, getRandomFirstSessionMessage } from '../api/dummy';
+import { sendToDummyApi } from '../api/dummy';
 import MessageBubble from '../components/MessageBubble';
 import EmojiPicker from '../components/EmojiPicker';
 import TypingDots from '../components/TypingDots';
@@ -35,25 +34,50 @@ export default function ChatScreen() {
     const insets = useSafeAreaInsets();
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const navigation = useNavigation();
+    const isFocused = useIsFocused();
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const SUGGESTIONS = [
+        'Quick solutions for a problem',
+        'A solid venting session!',
+        'Help brainstorming a strategy',
+        'More information about PDA',
+        'To share a win!',
+    ];
 
     useEffect(() => {
         (async () => {
             const prev = await loadMessages();
             if (prev.length === 0) {
-                const opener = getRandomFirstSessionMessage();
-                const msg: { id: string; role: 'gale'; text: string; ts: number } = {
-                    id: 'opener',
-                    role: 'gale',
-                    text: opener,
-                    ts: Date.now(),
-                };
-                setMessages([msg]);
-                await saveMessages([msg]);
+                setMessages([]);
+                setShowSuggestions(true);
             } else {
                 setMessages(prev);
+                setShowSuggestions(false);
             }
         })();
     }, []);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            const t = setTimeout(() => setShowSuggestions(true), 100);
+            return () => { try { clearTimeout(t); } catch { } };
+        }, []),
+    );
+
+    useEffect(() => {
+        if (isFocused) {
+            const t = setTimeout(() => setShowSuggestions(true), 100);
+            return () => { try { clearTimeout(t); } catch { } };
+        }
+    }, [isFocused]);
+
+    useEffect(() => {
+        const nav: any = navigation;
+        const unsub = nav?.addListener?.('focus', () => {
+            setShowSuggestions(true);
+        });
+        return () => { try { unsub && unsub(); } catch { } };
+    }, [navigation]);
 
     useEffect(() => {
         try {
@@ -128,18 +152,21 @@ export default function ChatScreen() {
         );
     };
 
-    const send = async () => {
-        if (!input.trim()) return;
+    const send = async (prefill?: string) => {
+        const text = (prefill ?? input).trim();
+        if (!text) return;
+        setShowSuggestions(false);
         const msg: Message = {
             id: Date.now().toString(),
             role: 'user',
-            text: input.trim(),
+            text,
             ts: Date.now(),
             receipt: 'sending',
         };
         const newMsgs = [...messages, msg];
         setMessages(newMsgs);
         await saveMessages(newMsgs);
+        setTimeout(() => { try { listRef.current?.scrollToEnd({ animated: true }); } catch { } }, 0);
         try {
             sendSoundRef.current?.play();
         } catch { }
@@ -170,6 +197,8 @@ export default function ChatScreen() {
         try {
             receiveSoundRef.current?.play();
         } catch { }
+
+        setTimeout(() => { try { listRef.current?.scrollToEnd({ animated: true }); } catch { } }, 0);
         setStatus('online');
         setTimeout(() => setStatus('available'), 2000);
     };
@@ -221,6 +250,27 @@ export default function ChatScreen() {
                     renderItem={renderMessage}
                     keyboardShouldPersistTaps="always"
                     ListHeaderComponent={null}
+                    ListEmptyComponent={() => (
+                        showSuggestions ? (
+                            <View style={[styles.suggestionsWrap, { paddingVertical: 12 }]}>
+                                <Text style={styles.suggestionsTitle}>What would be most helpful for you today?</Text>
+                                {SUGGESTIONS.map(s => (
+                                    <Pressable key={s} onPress={() => send(s)} style={styles.suggestionBtn}>
+                                        <Text style={styles.suggestionTxt}>{s}</Text>
+                                    </Pressable>
+                                ))}
+                            </View>
+                        ) : null
+                    )}
+                    ListFooterComponent={() => (
+                        status === 'typing' ? (
+                            <View style={styles.typingPlaceholderRow}>
+                                <View style={styles.typingPlaceholderBubble}>
+                                    <TypingDots />
+                                </View>
+                            </View>
+                        ) : null
+                    )}
                     onContentSizeChange={() => {
                         try { listRef.current?.scrollToEnd({ animated: true }); } catch { }
                     }}
@@ -230,6 +280,16 @@ export default function ChatScreen() {
                     }}
                     style={{ flex: 1 }}
                 />
+                {showSuggestions && messages.length > 0 && !keyboardVisible && !showEmoji && (
+                    <View style={styles.suggestionsWrap}>
+                        <Text style={styles.suggestionsTitle}>What would be most helpful for you today?</Text>
+                        {SUGGESTIONS.map(s => (
+                            <Pressable key={s} onPress={() => send(s)} style={styles.suggestionBtn}>
+                                <Text style={styles.suggestionTxt}>{s}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                )}
                 <View style={[styles.inputRow, { paddingBottom: insets.bottom }]} collapsable={false}>
                     <Pressable
                         onPress={() => {
@@ -248,8 +308,11 @@ export default function ChatScreen() {
                         placeholder="Type a message"
                         placeholderTextColor={colors.textSecondary}
                         selectionColor={colors.accent}
+                        multiline
+                        scrollEnabled
+                        textAlignVertical="top"
                     />
-                    <Pressable onPress={send} style={styles.send} hitSlop={12}>
+                    <Pressable onPress={() => send()} style={styles.send} hitSlop={12}>
                         <Text style={{ color: colors.accent, fontSize: 16 }}>Send</Text>
                     </Pressable>
                 </View>
@@ -295,6 +358,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         backgroundColor: colors.card,
         color: colors.textPrimary,
+        maxHeight: 120,
     },
     send: { padding: 8, borderRadius: 16, backgroundColor: colors.card },
     header: {
@@ -335,4 +399,12 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
         borderRadius: 12,
     },
+    typingPlaceholderRow: { width: '100%', padding: 4, alignItems: 'flex-start' },
+    typingPlaceholderBubble: { maxWidth: '80%', borderRadius: 18, padding: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginLeft: 8 },
+    suggestionsWrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+    suggestionsTitle: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 8 },
+    suggestionBtn: { backgroundColor: colors.card, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 24, alignItems: 'center', marginVertical: 6, borderWidth: 1, borderColor: colors.border },
+    suggestionTxt: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
+    suggestionsOverlay: { position: 'absolute', left: 0, right: 0, paddingHorizontal: 16, zIndex: 100, elevation: 100 },
+    suggestionsCard: { backgroundColor: colors.card, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: colors.border, marginHorizontal: 16, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 12 },
 });

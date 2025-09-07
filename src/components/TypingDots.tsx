@@ -19,10 +19,11 @@ export default function TypingDots() {
         );
     }, []);
 
+    const palette = [colors.accent, '#34B7F1', '#F59E0B'];
     return (
         <View style={styles.row}>
             {dots.map((v, i) => (
-                <Animated.View key={i} style={[styles.dot, { opacity: v }]} />
+                <Animated.View key={i} style={[styles.dot, { opacity: v, backgroundColor: palette[i % palette.length] }]} />
             ))}
         </View>
     );

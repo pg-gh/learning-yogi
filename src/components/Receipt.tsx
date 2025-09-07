@@ -7,24 +7,7 @@ export default function Receipt({ state }: { state: ReceiptEnum }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (state === 'read') {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-        ]),
-      );
-      pulse.start();
-      return () => pulse.stop();
-    }
+    pulseAnim.setValue(1);
   }, [state, pulseAnim]);
 
   const getMark = (state: ReceiptEnum): string => {
@@ -61,9 +44,7 @@ export default function Receipt({ state }: { state: ReceiptEnum }) {
   const color = getColor(state);
 
   return (
-    <Animated.View
-      style={[styles.wrap, { transform: [{ scale: state === 'read' ? pulseAnim : 1 }] }]}
-    >
+    <Animated.View style={[styles.wrap]}>
       <Text style={[styles.txt, { color }]}>{mark}</Text>
     </Animated.View>
   );
